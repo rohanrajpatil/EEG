@@ -10,12 +10,19 @@ log = logging.getLogger(__name__)
 
 
 im = (4, 8, 12)
+ex = (3, 7, 11)
 
 id = {"T1": 1, "T2": 2}
 
 lower, upper= 1.0, 35.0
 tmin, tmax = 0.5, 3.5
 tfreq = 160.0
+
+excluded = {88, 92, 100}
+
+
+def all_subjects():
+    return [s for s in range(1, 110) if s not in excluded]
 
 def read_runs(subject, runs):
     paths = eegbci.load_data(subject, list(runs), update_path=True, verbose="error")
@@ -58,6 +65,9 @@ def load_subject_data( ids, runs):
     ch_names = None
 
     for id in ids:
+        if id in excluded:
+            log.warning("subject %s excluded (non-standard recording)", id)
+            continue
         try:
             raw = read_runs(id, runs)
             epochs = split(raw)
