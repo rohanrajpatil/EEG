@@ -5,3 +5,5 @@ venv/
 .ipynb_checkpoints/
 mne_data/
 *.fif
+cache/
+*npz
