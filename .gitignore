@@ -7,3 +7,4 @@ mne_data/
 *.fif
 cache/
 *npz
+cache/

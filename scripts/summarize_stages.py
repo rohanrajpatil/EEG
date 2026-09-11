@@ -14,14 +14,14 @@ from src.results import RESULTS
 STAGES = {
     1: ("PSD sensorimotor", "Stage 1  PSD (C3/Cz/C4)", "#2a78d6"),
     2: ("FBCSP 4-40Hz LOSO", "Stage 2  FBCSP (9 bands)", "#eb6834"),
-    3: ("Riemannian TS 7-30Hz recentered", "Stage 3  Riemannian TS (recentered)", "#1baf7a"),
+    3: ("Riemannian TS 7-30Hz recentered nestedC", "Stage 3  Riemannian TS (recentered, nested C)", "#1baf7a"),
 }
 
 HEADLINE = [
     "PSD sensorimotor", "PSD all channels",
     "FBCSP 4-40Hz", "FBCSP 4-40Hz LOSO", "FBCSP 4-40Hz (9 bands)",
     "Riemannian TS 1-35Hz", "Riemannian TS 7-30Hz", "Riemannian TS 7-30Hz recentered",
-    "FB-Riemannian 3-band recentered",
+    "FB-Riemannian 3-band recentered", "Riemannian TS 7-30Hz recentered nestedC",
 ]
 
 
@@ -77,11 +77,10 @@ def loso_plot(path):
     rng = np.random.default_rng(0)
     for i, (v, _, color) in enumerate(series, 1):
         ax_box.scatter(i + rng.uniform(-0.16, 0.16, len(v)), v, s=11, color=color, alpha=0.65, linewidths=0)
-        ax_box.text(i, 0.985, f"median {np.median(v):.3f}", ha="center", va="top", fontsize=8.5, color="#1f1f1e")
     ax_box.axhline(0.5, color="#7a7a77", linewidth=1, linestyle=(0, (4, 3)))
     ax_box.text(0.52, 0.505, "chance", fontsize=8, color="#4a4a48")
     ax_box.set_xticks(range(1, len(series) + 1))
-    ax_box.set_xticklabels([l.split("  ")[0] for l in labels])
+    ax_box.set_xticklabels([f"{lab.split('  ')[0]}\nmedian {np.median(v):.3f}" for v, lab, _ in series])
     ax_box.set_ylim(0.28, 1.0)
     ax_box.set_ylabel("LOSO accuracy per subject", color="#4a4a48", fontsize=9.5)
     ax_box.set_title("Per-subject spread", loc="left", fontsize=10.5, color="#1f1f1e")
@@ -95,6 +94,7 @@ def loso_plot(path):
     ax_hist.set_ylabel("subjects", color="#4a4a48", fontsize=9.5)
     ax_hist.set_title(f"Distribution across n={len(series[0][0])} held-out subjects", loc="left",
                       fontsize=10.5, color="#1f1f1e")
+    ax_hist.set_ylim(0, ax_hist.get_ylim()[1] * 1.4)
     ax_hist.legend(frameon=False, fontsize=8.5, loc="upper right", labelcolor="#1f1f1e")
 
     fig.suptitle("Left vs right imagined fist, EEGMMIDB, leave-one-subject-out", x=0.01, ha="left",
@@ -128,6 +128,15 @@ def main():
         if len(sub):
             print(f"\n{title}\n" + "=" * 100)
             print(sub[["stage", "method", "cv", "test_acc", "test_sd", "test_auc", "gap"]].to_string(index=False, float_format=fmt))
+
+    sweep = t[t.method.str.contains(r" C=")].copy()
+    if len(sweep):
+        sweep["C"] = sweep.method.str.extract(r"C=([0-9.e-]+)").astype(float)
+        print("\nregularization sweep, recentered tangent space (train acc shows the overfit closing)\n" + "=" * 100)
+        train = df[df.n_subjects >= 100].groupby(["method", "cv"]).train_acc.mean()
+        sweep["train_acc"] = [train[(m, c)] for m, c in zip(sweep.method, sweep.cv)]
+        print(sweep.sort_values(["cv", "C"])[["C", "cv", "train_acc", "test_acc", "test_sd", "test_auc"]]
+              .to_string(index=False, float_format=fmt, formatters={"C": lambda v: f"{v:g}"}))
 
     out = RESULTS / "loso_stage_comparison.png"
     stats = loso_plot(out)

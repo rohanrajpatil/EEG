@@ -24,6 +24,15 @@ from scripts.evaluate_loso_controls import CH_SETS, fit_score, row, show
 
 log = logging.getLogger("stage3")
 STAGE = 3
+HEAD_C = 1.0
+
+
+def head():
+    return clf_head(C=HEAD_C)
+
+
+def tagc(name):
+    return name if HEAD_C == 1.0 else f"{name} C={HEAD_C:g}"
 
 TS_RAW = "Riemannian TS 1-35Hz"
 TS_BB = "Riemannian TS 7-30Hz"
@@ -64,7 +73,7 @@ def score_rows(name, C, recentered, y, g, splits, fold_ids, n_jobs):
     t0 = time.perf_counter()
 
     def one(F, tr, te, fid):
-        r = row(name, fid, F.shape[1], g[te], len(te), fit_score(clf_head(), F, y, tr, te))
+        r = row(tagc(name), fid, F.shape[1], g[te], len(te), fit_score(head(), F, y, tr, te))
         r["stage"] = STAGE
         return r
 
@@ -204,8 +213,8 @@ def mode_executed_transfer(args):
             else:
                 ref = mean_riemann(Ce_[tr], tol=1e-5)
                 Fe, Fi = tangent_space(Ce_, ref), tangent_space(Ci_, ref)
-            m = clf_head().fit(Fe[tr], ye[tr])
-            for tag, F, yy, idx in ((f"{base} exec->exec", Fe, ye, te_e), (f"{base} exec->imag", Fi, yi, te_i)):
+            m = head().fit(Fe[tr], ye[tr])
+            for tag, F, yy, idx in ((tagc(f"{base} exec->exec"), Fe, ye, te_e), (tagc(f"{base} exec->imag"), Fi, yi, te_i)):
                 r = row(tag, fold, Fe.shape[1], np.array(test_subj), len(idx), {
                     "train_acc": (m.predict(Fe[tr]) == ye[tr]).mean(),
                     "test_acc": (m.predict(F[idx]) == yy[idx]).mean(),
@@ -230,7 +239,7 @@ def mode_c_sweep(args):
     gk = list(GroupKFold(args.n_splits).split(X, y, g))
 
     rows = []
-    for c in (0.001, 0.01, 0.1, 1.0):
+    for c in args.C:
         name = f"{TS_RC} C={c:g}"
         for cv_name, splits, ids in (("LOSO", loso, present), (f"GroupKFold{args.n_splits}", gk, list(range(1, len(gk) + 1)))):
             def one(tr, te, fid):
@@ -249,9 +258,58 @@ def mode_c_sweep(args):
     show(df, "Stage 3 regularization sweep (recentered tangent space)")
 
 
+TS_NESTED = "Riemannian TS 7-30Hz recentered nestedC"
+C_GRID = (1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 1e-1)
+
+
+def mode_nested_loso(args):
+    subs = subjects_arg(args)
+    X, y, g, ch = cached_load(subs, im)
+    lo, hi = broad_band
+    F = fixed_features(recenter(epoch_covs(bandpass(X, lo, hi, sfreq=tfreq)), g))
+    present = sorted(np.unique(g))
+
+    def outer(s):
+        tr, te = np.flatnonzero(g != s), np.flatnonzero(g == s)
+        inner = list(GroupKFold(args.n_splits).split(F[tr], y[tr], g[tr]))
+        inner_acc = {}
+        for c in C_GRID:
+            accs = [fit_score(clf_head(C=c), F[tr], y[tr], itr, ite)["test_acc"] for itr, ite in inner]
+            inner_acc[c] = float(np.mean(accs))
+        best = max(inner_acc, key=inner_acc.get)
+        r = row(TS_NESTED, s, F.shape[1], g[te], len(te), fit_score(clf_head(C=best), F, y, tr, te))
+        r["stage"] = STAGE
+        return r, best, inner_acc
+
+    t0 = time.perf_counter()
+    out = Parallel(n_jobs=args.n_jobs)(delayed(outer)(s) for s in present)
+    rows = [r for r, _, _ in out]
+    chosen = pd.Series([c for _, c, _ in out], index=present, name="chosen_C")
+    log.info("%-40s %d folds in %.0fs  test_acc=%.4f", TS_NESTED, len(rows), time.perf_counter() - t0,
+             np.mean([r["test_acc"] for r in rows]))
+
+    df = append_metrics(rows, cv="LOSO", n_subjects=len(present))
+    show(df, "Stage 3 nested LOSO (C chosen per fold by inner GroupKFold on training subjects)")
+    print("\ninner-CV choice of C across outer folds:\n" + chosen.value_counts().sort_index().to_string())
+    inner_mean = pd.DataFrame([ia for _, _, ia in out]).mean()
+    print("\nmean inner-CV accuracy per C:\n" + inner_mean.to_string(float_format=lambda v: f"{v:.4f}"))
+
+    dist = df[["method", "fold", "n_test_epochs", "test_acc", "test_auc"]].rename(columns={"fold": "subject"})
+    dist_path = RESULTS / "loso_distributions.csv"
+    dist.to_csv(dist_path, mode="a", header=not dist_path.exists(), index=False)
+
+    full = pd.read_csv(dist_path)
+    keep = {"PSD sensorimotor": "psd_acc", "FBCSP 4-40Hz LOSO": "fbcsp_acc",
+            TS_BB: "riemannian_acc", TS_RC: "riemannian_recentered_acc", TS_NESTED: "riemannian_nested_acc"}
+    wide = (full[full.method.isin(keep)].drop_duplicates(["method", "subject"], keep="last")
+            .pivot(index="subject", columns="method", values="test_acc").rename(columns=keep))
+    wide["riemannian_nested_C"] = chosen
+    wide.to_csv(RESULTS / "loso_distributions_wide.csv")
+
+
 MODES = {"loso": mode_loso, "group_kfold": mode_group_kfold, "leakage_test": mode_leakage_test,
          "negative_control": mode_negative_control, "executed_transfer": mode_executed_transfer,
-         "c_sweep": mode_c_sweep}
+         "c_sweep": mode_c_sweep, "nested_loso": mode_nested_loso}
 
 
 def main():
@@ -260,7 +318,11 @@ def main():
     ap.add_argument("--subjects", type=int, default=0)
     ap.add_argument("--n-splits", type=int, default=5)
     ap.add_argument("--n-jobs", type=int, default=8)
+    ap.add_argument("--C", type=float, nargs="+", default=[0.001, 0.01, 0.1, 1.0])
+    ap.add_argument("--head-C", type=float, default=1.0)
     args = ap.parse_args()
+    global HEAD_C
+    HEAD_C = args.head_C
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     mne.set_log_level("ERROR")
