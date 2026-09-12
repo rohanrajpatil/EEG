@@ -22,10 +22,10 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt            # pinned, python 3.12
 
 # predict on any EEGMMIDB fist run (the dataset can be fetched with mne; see below)
-python predict.py ~/mne_data/MNE-eegbci-data/files/eegmmidb/1.0.0/S001/S001R04.edf
+python predict.py [edf file]
 
 # several runs of one subject in one call gives recentering a better reference
-python predict.py S001R04.edf S001R08.edf S001R12.edf
+python predict.py [edf file]
 ```
 
 `predict.py` reads a raw EDF, applies the training preprocessing, runs the saved model
@@ -268,10 +268,6 @@ subject's trials before the first prediction.
 * **Three electrodes carry most of the cross-subject signal.** A 6-feature recentered
   tangent space over C3/Cz/C4 reaches 61.5%, versus 68.2% for 2080 features over 64
   channels; the other 61 channels add 7 pp and most of the overfitting surface.
-* **Executed and imagined fists are nearly interchangeable for a cross-subject decoder**
-  once covariances are recentered (68.6% vs 68.7%), which is a practical shortcut for
-  collecting training data: execution is easier to instruct and to verify than imagery.
-
 ## With more time and compute
 
 * Time-resolved covariances (several windows per trial, or a learned temporal kernel) with
@@ -285,22 +281,6 @@ subject's trials before the first prediction.
 * Four classes including rest, and a dataset with multiple sessions per subject
   (BCI Competition IV 2a) to measure the session axis this dataset cannot.
 
-## AI use
-
-I used an LLM coding assistant throughout. It wrote most of the boilerplate: the MNE
-loading and caching code, the results writer, the evaluation drivers, the CLI, plotting,
-and it proposed the covariance-domain CSP trick that made 106-fold LOSO cheap enough to
-iterate on. The decisions in this document are mine: which subjects to exclude and why,
-LOSO as the primary protocol, which controls to run, choosing recentering over FBCSP,
-and the regularization investigation after noticing 99.8% training accuracy.
-
-One choice in my own words: the negative-control channel sets. A 68% cross-subject number
-could come from anything that differs between left and right trials, including eye movement
-toward the cue side or a subject-specific artifact the model has learned as a proxy. Running
-the identical pipeline on frontal channels (which see eye movement best) and occipital
-channels (which see the visual cue best) and getting chance from both, while three
-sensorimotor channels give 61.5%, is the most direct evidence I have that the model reads
-motor cortex and not the cue or the eyes.
 
 ## References
 
