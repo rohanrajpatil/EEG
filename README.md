@@ -280,12 +280,3 @@ subject's trials before the first prediction.
   identical nested-LOSO protocol so the comparison is fair.
 * Four classes including rest, and a dataset with multiple sessions per subject
   (BCI Competition IV 2a) to measure the session axis this dataset cannot.
-
-
-## References
-
-* Schalk G. et al., BCI2000: a general-purpose brain-computer interface system. IEEE TBME 51(6), 2004.
-* Goldberger A.L. et al., PhysioBank, PhysioToolkit, and PhysioNet. Circulation 101(23), 2000.
-* Barachant A. et al., Multiclass brain-computer interface classification by Riemannian geometry. IEEE TBME 59(4), 2012.
-* Zanini P. et al., Transfer learning: a Riemannian geometry framework with applications to BCI. IEEE TBME 65(5), 2018.
-* Ang K.K. et al., Filter bank common spatial pattern (FBCSP) in brain-computer interface. IJCNN 2008.
